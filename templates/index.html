@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
+        /* === RESET & BASE STYLES === */
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         :root {
@@ -208,7 +209,7 @@
             display: grid;
         }
 
-        /* LEFT PANEL */
+        /* === LEFT PANEL (JD Analysis) === */
         #left-panel {
             background: var(--surface);
             border-right: 1px solid var(--border);
@@ -246,7 +247,6 @@
             white-space: pre-wrap;
         }
 
-        /* JD ANALYSIS PANEL */
         #jd-analysis {
             overflow-y: auto;
             flex: 1;
@@ -359,7 +359,7 @@
             margin: 12px 0;
         }
 
-        /* RIGHT PANEL */
+        /* === RIGHT PANEL (Candidate Results) === */
         #right-panel {
             display: flex;
             flex-direction: column;
@@ -514,7 +514,7 @@
             font-size: 0.75rem;
         }
 
-        /* expand arrow */
+        /* EXPAND ARROW */
         .expand-indicator {
             width: 100%;
             display: flex;
@@ -666,7 +666,6 @@
             margin-left: 20px;
         }
 
-        /* No transcript */
         .no-chat {
             padding: 16px 18px;
             font-family: var(--mono);
@@ -674,7 +673,7 @@
             color: var(--muted);
         }
 
-        /* LOADING STATE */
+        /* === LOADING STATE === */
         #loading-overlay {
             display: none;
             position: fixed;
@@ -717,7 +716,7 @@
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
 
-        /* Hiring recommendation pills */
+        /* HIRING RECOMMENDATION PILLS */
         .rec-pill {
             font-family: var(--mono);
             font-size: 0.6rem;
@@ -729,14 +728,6 @@
         .rec-pill.conditional { background: #ffd16615; color: var(--accent4); border: 1px solid #ffd16630; }
         .rec-pill.hold { background: #ff990015; color: #ff9900; border: 1px solid #ff990030; }
         .rec-pill.no { background: #ff6b6b15; color: var(--accent3); border: 1px solid #ff6b6b30; }
-
-        .ghost-hint {
-            font-family: var(--mono);
-            font-size: 0.62rem;
-            color: var(--muted);
-            margin-top: 4px;
-            font-style: italic;
-        }
     </style>
 </head>
 <body>
@@ -760,7 +751,6 @@
     <div class="header-tag">AI Scouting Engine</div>
 </header>
 
-<!-- LOADING OVERLAY -->
 <div id="loading-overlay">
     <div class="loader-ring"></div>
     <div class="loader-text">Running AI Analysis</div>
@@ -768,8 +758,6 @@
 </div>
 
 <div id="app">
-
-    <!-- CENTER STATE -->
     <div id="center-state">
         <div class="center-hero">
             <h1>Find the right people,<br><em>faster.</em></h1>
@@ -801,23 +789,17 @@ The AI will:
         </div>
     </div>
 
-    <!-- SPLIT STATE -->
     <div id="split-state">
-
-        <!-- LEFT: JD + Analysis -->
         <div id="left-panel">
             <div class="panel-header">
                 <div class="dot"></div>
                 <h2>Job Description</h2>
             </div>
             <div id="left-jd-text"></div>
-
             <div id="jd-analysis">
-                <!-- Populated by JS -->
-            </div>
+                </div>
         </div>
 
-        <!-- RIGHT: Candidates -->
         <div id="right-panel">
             <div class="right-header">
                 <h2>Candidate Results</h2>
@@ -825,16 +807,18 @@ The AI will:
             </div>
             <div id="results-list"></div>
         </div>
-
     </div>
 </div>
 
 <script>
+    /**
+     * Parses the raw AI chat transcript into structured turn objects.
+     * @param {string|Array} raw - The raw transcript from the backend
+     * @returns {Array} List of { role: string, text: string } objects
+     */
     function parseTranscript(raw) {
-        // Handle null/undefined
         if (!raw) return [];
 
-        // If it's already an array of turn objects [{role, text}]
         if (Array.isArray(raw)) {
             return raw.map(t => ({ role: (t.role || '').toLowerCase(), text: t.text || t.content || '' }));
         }
@@ -842,12 +826,11 @@ The AI will:
         if (typeof raw !== 'string' || !raw.trim()) return [];
 
         const turns = [];
-
-        // Strategy 1: split on line breaks, look for "Recruiter:" / "Candidate:"
         const lines = raw.split(/\r?\n/);
         let current = null;
         let matched = false;
 
+        // Strategy 1: Look for conversational breaks via newlines
         for (const line of lines) {
             const recMatch = line.match(/^(?:Recruiter|Interviewer|AI|Bot|Q)\s*:\s*(.*)/i);
             const canMatch = line.match(/^(?:Candidate|Applicant|User|A)\s*:\s*(.*)/i);
@@ -864,10 +847,9 @@ The AI will:
             }
         }
         if (current) turns.push(current);
-
         if (matched && turns.length > 0) return turns;
 
-        // Strategy 2: inline format "Recruiter: ... Candidate: ..." on one line
+        // Strategy 2: Fallback for inline formatting
         const inline = raw.replace(/\r?\n/g, ' ');
         const parts = inline.split(/(?=(?:Recruiter|Interviewer|Candidate|Applicant|Q|A)\s*:)/i);
         for (const part of parts) {
@@ -880,6 +862,7 @@ The AI will:
         return turns;
     }
 
+    /** Helper functions to assign dynamic CSS classes based on data properties */
     function getQuadrantClass(q) {
         if (!q) return '';
         const n = q.trim().toLowerCase();
@@ -905,13 +888,23 @@ The AI will:
         return '';
     }
 
+    /**
+     * Main Execution Function.
+     * Fires off the API request to FastAPI and handles UI state transitions.
+     */
     async function runPipeline() {
         const jd = document.getElementById('jd-input').value.trim();
-        if (!jd) { alert("Please enter a Job Description."); return; }
+        if (!jd) { 
+            alert("Please enter a Job Description."); 
+            return; 
+        }
 
         const btn = document.getElementById('run-btn');
+        const overlay = document.getElementById('loading-overlay');
+        
         btn.disabled = true;
-        document.getElementById('loading-overlay').classList.add('active');
+        btn.textContent = "Processing...";
+        overlay.classList.add('active');
 
         try {
             const response = await fetch('/api/run-pipeline', {
@@ -923,35 +916,35 @@ The AI will:
 
             if (data.status === "error") throw new Error(data.message);
 
-            // Hide center, show split
+            // Hide the input center state, show the results split state
             document.getElementById('center-state').style.display = 'none';
             document.getElementById('split-state').classList.add('active');
 
-            // Populate left JD text
+            // Populate the DOM
             document.getElementById('left-jd-text').textContent = jd;
-
-            // Render JD analysis
             renderJDAnalysis(data.jd_report);
-
-            // Render candidates
             renderCandidates(data.results);
 
         } catch (err) {
-            alert("Pipeline failed: " + err.message);
-            console.error(err);
-        } finally {
+            console.error("Pipeline Error:", err);
+            alert(`Pipeline failed: ${err.message}\nCheck console for details.`);
             btn.disabled = false;
-            document.getElementById('loading-overlay').classList.remove('active');
+            btn.textContent = "Run AI Analysis →";
+        } finally {
+            overlay.classList.remove('active');
         }
     }
 
+    /**
+     * Renders the left-panel JD quality score block.
+     * @param {Object} jd - Parsed JD Quality data
+     */
     function renderJDAnalysis(jd) {
         if (!jd) return;
         const container = document.getElementById('jd-analysis');
 
         const gradeClass = (jd.overall_jd_grade || 'C').toUpperCase();
         const brief = jd.brief || jd.jd_brief || jd.summary || '';
-
         const redFlags = Array.isArray(jd.red_flags) ? jd.red_flags : [];
         const hooks    = Array.isArray(jd.missing_hooks) ? jd.missing_hooks : [];
         const rewrites = Array.isArray(jd.rewrite_suggestions) ? jd.rewrite_suggestions : [];
@@ -1019,13 +1012,14 @@ The AI will:
         `;
     }
 
+    /**
+     * Renders the right-panel list of scored candidates.
+     * @param {Array} results - List of candidate response objects
+     */
     function renderCandidates(results) {
         const list = document.getElementById('results-list');
         list.innerHTML = '';
         document.getElementById('candidate-count').textContent = `${results.length} candidates`;
-
-        // Debug: inspect the raw transcript format in browser console
-        console.log('[TalentRadar] Raw results:', JSON.stringify(results, null, 2));
 
         results.forEach((res, i) => {
             const turns = parseTranscript(res.chat_transcript);
@@ -1043,7 +1037,7 @@ The AI will:
             card.className = 'candidate-card';
             card.style.animationDelay = `${i * 80}ms`;
 
-            // Build chat section
+            // Build dynamic chat history UI block
             let chatContent = '';
             if (hasTurns) {
                 chatContent = `<div class="chat-turns">${turns.map(t => `
@@ -1052,16 +1046,15 @@ The AI will:
                         <div class="turn-bubble ${t.role}">${t.text}</div>
                     </div>`).join('')}</div>`;
             } else if (hasRawTranscript) {
-                // Parsing failed — show raw so you can see the format
                 chatContent = `<div class="chat-turns"><div class="chat-turn">
-                    <div class="turn-label recruiter" style="color:var(--accent4)">⚠ RAW TRANSCRIPT (check console for format)</div>
+                    <div class="turn-label recruiter" style="color:var(--accent4)">⚠ RAW TRANSCRIPT</div>
                     <div class="turn-bubble recruiter" style="white-space:pre-wrap;font-size:0.68rem">${String(res.chat_transcript)}</div>
                 </div></div>`;
             } else {
-                chatContent = `<div class="no-chat">No interview conducted — candidate did not meet match threshold.</div>`;
+                chatContent = `<div class="no-chat">No interview conducted — candidate did not meet technical match threshold.</div>`;
             }
 
-            // Build followup questions section
+            // Build followups and risk blocks
             const followups = Array.isArray(res.followup_questions) ? res.followup_questions : [];
             const risks = Array.isArray(res.risk_flags) ? res.risk_flags : [];
 
@@ -1094,6 +1087,7 @@ The AI will:
 
             const expandLabel = (hasTurns || hasRawTranscript) ? 'VIEW INTERVIEW + RECRUITER BRIEF' : 'VIEW RECRUITER BRIEF';
 
+            // Inject the complete card
             card.innerHTML = `
                 <div class="card-main">
                     <div class="rank-badge ${rankClass}">#${i + 1}</div>
@@ -1116,6 +1110,7 @@ The AI will:
                 <div class="chat-box">${chatContent}${followupHTML}${riskHTML}</div>
             `;
 
+            // Setup accordion click
             card.addEventListener('click', () => {
                 card.classList.toggle('expanded');
                 card.querySelector('.chat-box').classList.toggle('open');
