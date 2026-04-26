@@ -53,7 +53,7 @@ async def api_run_pipeline(payload: PipelineRequest):
     try:
         # Execute the multi-agent AI pipeline
         results, ghost, jd_report = run_pipeline(payload.job_description, CANDIDATES_DB)
-        
+    
         return {
             "status": "success",
             "results": results,

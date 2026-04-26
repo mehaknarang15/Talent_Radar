@@ -308,18 +308,19 @@ INSTRUCTIONS:
 For EACH candidate above:
 1. Evaluate match vs JD and ghost profile (match_score, ghost_proximity_score)
 2. If match_score >= 70: simulate a realistic 3-turn interview.
-   Format EXACTLY as:
-   Q: [question]
-   A: [answer]
-   Q: [question]
-   A: [answer]
-   Q: [question]
-   A: [answer]
+   Format the chat_transcript field EXACTLY as plain text like this:
+   Recruiter: [question text here]
+   Candidate: [answer text here]
+   Recruiter: [question text here]
+   Candidate: [answer text here]
+   Recruiter: [question text here]
+   Candidate: [answer text here]
+   Use ONLY "Recruiter:" and "Candidate:" as prefixes. Do NOT use Q: or A:. Do NOT use JSON inside chat_transcript — it must be a plain string.
    If match_score < 70: set chat_transcript to ""
 3. Evaluate engagement, motivation archetype, interest_score
 4. Generate recruiter_brief with exactly 3 followup_questions (for every candidate)
 
-Return ALL {len(batch)} candidates. Return structured JSON ONLY.
+CRITICAL: Return ALL {len(batch)} candidates. Do NOT skip, omit, or merge any candidate. Return structured JSON ONLY.
 """
     response = call_groq(
         prompt,
@@ -364,28 +365,47 @@ Return structured JSON ONLY.
         f"Must-haves: {', '.join(ghost.get('must_have_signals', []))}"
     )
 
-    BATCH_SIZE = 10
+    BATCH_SIZE = 5  
     items = list(resumes.items())
     batches = [items[i:i+BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
 
-    print(f"[BATCHED PIPELINE] Phase 2: evaluating {len(items)} candidates in {len(batches)} batches...")
+    print(f"[BATCHED PIPELINE] Phase 2: evaluating {len(items)} candidates in {len(batches)} batches of {BATCH_SIZE}...")
 
     all_candidates = []
-    INTER_BATCH_DELAY = 20  # seconds between batches to respect Groq limits
+    INTER_BATCH_DELAY = 15  # seconds between batches to respect Groq rate limits
 
     for idx, batch in enumerate(batches):
-        print(f"  → Batch {idx+1}/{len(batches)} ({len(batch)} candidates)")
+        print(f"  → Batch {idx+1}/{len(batches)} ({len(batch)} candidates: {[name for name, _ in batch]})")
         result = _evaluate_candidate_batch(jd_text, ghost_text, batch)
+        if len(result) != len(batch):
+            print(f"  ⚠ WARNING: Expected {len(batch)} candidates back, got {len(result)}. Groq may have truncated the batch.")
         all_candidates.extend(result)
-        if idx < len(batches) - 1:  
+        if idx < len(batches) - 1:
             print(f"  ⏳ Waiting {INTER_BATCH_DELAY}s to respect Groq rate limits...")
             time.sleep(INTER_BATCH_DELAY)
 
     print(f"[BATCHED PIPELINE] Done. Got {len(all_candidates)} candidate results.")
+    jd_analysis = setup.get("jd_analysis", {})
+    if not jd_analysis.get("clarity_score") and not jd_analysis.get("overall_jd_grade"):
+        
+        if setup.get("clarity_score") or setup.get("overall_jd_grade"):
+            jd_analysis = {k: setup[k] for k in [
+                "clarity_score", "attractiveness_score", "red_flags",
+                "missing_hooks", "rewrite_suggestions", "overall_jd_grade"
+            ] if k in setup}
+        print(f"[JD DEBUG] jd_analysis extracted: {jd_analysis}")
+
+    jd_parsed = setup.get("jd_parsed", {})
+    if not jd_parsed.get("required_skills"):
+        if setup.get("required_skills"):
+            jd_parsed = {k: setup[k] for k in [
+                "required_skills", "required_years_experience", "core_domain",
+                "seniority_level", "implicit_culture_signals"
+            ] if k in setup}
 
     return {
-        "jd_analysis": setup.get("jd_analysis", {}),
-        "jd_parsed": setup.get("jd_parsed", {}),
+        "jd_analysis": jd_analysis,
+        "jd_parsed": jd_parsed,
         "ghost_candidate": ghost,
         "candidates": all_candidates
     }

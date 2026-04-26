@@ -819,6 +819,7 @@ The AI will:
     function parseTranscript(raw) {
         if (!raw) return [];
 
+        // Handle array of turn objects from the API
         if (Array.isArray(raw)) {
             return raw.map(t => ({ role: (t.role || '').toLowerCase(), text: t.text || t.content || '' }));
         }
@@ -830,7 +831,7 @@ The AI will:
         let current = null;
         let matched = false;
 
-        // Strategy 1: Look for conversational breaks via newlines
+        // Strategy 1: Named speaker format — supports both "Recruiter:" and "Q:" prefixes
         for (const line of lines) {
             const recMatch = line.match(/^(?:Recruiter|Interviewer|AI|Bot|Q)\s*:\s*(.*)/i);
             const canMatch = line.match(/^(?:Candidate|Applicant|User|A)\s*:\s*(.*)/i);
@@ -843,13 +844,14 @@ The AI will:
                 if (current) turns.push(current);
                 current = { role: 'candidate', text: canMatch[1].trim() };
             } else if (current && line.trim()) {
+                // Continuation of the previous speaker's turn
                 current.text += ' ' + line.trim();
             }
         }
         if (current) turns.push(current);
         if (matched && turns.length > 0) return turns;
 
-        // Strategy 2: Fallback for inline formatting
+        // Strategy 2: Inline fallback — all on one line with speaker prefixes
         const inline = raw.replace(/\r?\n/g, ' ');
         const parts = inline.split(/(?=(?:Recruiter|Interviewer|Candidate|Applicant|Q|A)\s*:)/i);
         for (const part of parts) {
@@ -913,6 +915,7 @@ The AI will:
                 body: JSON.stringify({ job_description: jd })
             });
             const data = await response.json();
+            console.log('[API] Full response from /api/run-pipeline:', JSON.stringify(data, null, 2));
 
             if (data.status === "error") throw new Error(data.message);
 
@@ -940,7 +943,18 @@ The AI will:
      * @param {Object} jd - Parsed JD Quality data
      */
     function renderJDAnalysis(jd) {
-        if (!jd) return;
+        if (!jd) { console.warn('[JD] renderJDAnalysis received null/undefined'); return; }
+
+        console.log('[JD] Raw jd_report received from API:', JSON.stringify(jd, null, 2));
+
+        if (!jd.clarity_score && !jd.overall_jd_grade) {
+            const unwrapped = jd.jd_analysis || jd.jd_quality || jd.quality || jd.analysis;
+            if (unwrapped) {
+                console.log('[JD] Unwrapped from nested key:', unwrapped);
+                jd = unwrapped;
+            }
+        }
+
         const container = document.getElementById('jd-analysis');
 
         const gradeClass = (jd.overall_jd_grade || 'C').toUpperCase();
