@@ -64,7 +64,7 @@ venv\Scripts\activate
 ```
 
 ```bash
-pip install fastapi uvicorn pydantic groq python-dotenv jinja2
+pip install -r requirements.txt
 ```
 
 Create a `.env` file in the root directory and add:
@@ -72,23 +72,12 @@ Create a `.env` file in the root directory and add:
 GROQ_API_KEY=your_groq_api_key_here
 ```
 
-Ensure these files are present in the root directory:
+Sample input file `job_description.txt` is present in the root directory: to paste the target JD in the input section when website opens
 
-- `job_description.txt` (paste the target JD)
-- `candidates.json` (example format below)
-
-```json
-[
-  {
-    "name": "John Doe",
-    "resume_text": "Candidate resume content here"
-  }
-]
-```
 
 Run the application:
 ```bash
-python main.py
+uvicorn main:app --reload
 ```
 
 Open in browser:
