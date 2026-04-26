@@ -14,19 +14,13 @@ The system deploys specialized AI agents across five distinct phases:
 
 * **🔍 Phase 3: Semantic Candidate Matching:** Candidates are evaluated against both the JD and the Ghost Profile. The agent extracts inferred skills and calculates total experience. It generates a Match Score (0-100) and a Ghost Proximity Score (0-100). It explicitly lists satisfied constraints, missing constraints, and the "Ghost Delta" (what separates the candidate from the ideal), backed by semantic reasoning.
 
-* **💬 Phase 4: Simulated Engagement & Behavioral Analysis:** For candidates passing a technical threshold (Match > 70), the agent simulates a realistic 3-turn conversational interview. It analyzes the transcript to calculate an Interest Score (0-100) and an Authenticity Score. It categorizes the candidate into a Motivation Archetype (Prestige-seeker, Growth-seeker, Stability-seeker, Misaligned) and actively flags Deception Signals (e.g., rehearsed or evasive answers).
+* **💬 Phase 4: Simulated Engagement & Behavioral Analysis:** For candidates passing a technical threshold (Match > 50), the agent simulates a realistic 3-turn conversational interview. It analyzes the transcript to calculate an Interest Score (0-100) and an Authenticity Score. It categorizes the candidate into a Motivation Archetype (Prestige-seeker, Growth-seeker, Stability-seeker, Misaligned) and actively flags Deception Signals (e.g., rehearsed or evasive answers).
 
 * **📊 Phase 5: Recruiter Briefing & Output:** Finally, the agent packages the data for human action. It generates a concise 2-sentence summary, assigns a Hiring Recommendation (Strong Yes, Conditional Yes, Hold, No), identifies specific Risk Flags, and drafts exactly 3 targeted follow-up questions (with strategic reasoning) for the human recruiter to ask.
 
 ## 📈 3. Scoring Logic & The Decision Matrix
 The final Composite Score is a weighted calculation:  
-`Base Score = (Match * 0.35) + (Ghost Proximity * 0.25) + (Interest * 0.20) + (Authenticity * 0.20)`
-
-This base score is then modified by behavioral intelligence via specific reward and penalty logic:
-
-* **🎯 Motivation Archetypes:** Growth-seeker (+8), Prestige-seeker (+3), Stability-seeker (+1), Misaligned (-10)  
-* **⚡ Engagement Levels:** High (+5), Medium (+2), Low (+0)  
-* **🚨 Deception Penalties:** -3 points per detected deceptive/rehearsed signal, with a compounding escalation (-5 additional points) if 3 or more signals are detected, capped at a maximum penalty of -15 points  
+`Base Score = (Match * 0.40) + (Ghost Proximity * 0.25) + (Interest * 0.20) + (Authenticity * 0.15)`
 
 Based on the raw Match and Interest scores, the agent plots every candidate into a strict 2x2 action matrix:
 
