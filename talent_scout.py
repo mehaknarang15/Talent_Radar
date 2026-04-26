@@ -427,7 +427,7 @@ def run_pipeline(raw_jd: str, synthetic_resumes: dict):
             "chat_transcript": c.get("chat_transcript", "")
         })
 
-    results.sort(key=lambda x: x["composite_score"], reverse=True)
+    results.sort(key=lambda x: x["match_score"], reverse=True)
 
     return results, data["ghost_candidate"], data["jd_analysis"]
 
