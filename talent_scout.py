@@ -1,7 +1,6 @@
 import os
-import time
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any
 from dotenv import load_dotenv
 from groq import Groq
 
@@ -10,48 +9,48 @@ load_dotenv()
 # ==========================================
 # CONFIGURATION (GROQ)
 # ==========================================
-# Initialize the Groq client securely
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-MODEL = "llama-3.1-8b-instant" 
+MODEL = "llama-3.3-70b-versatile" 
 
 def call_groq(prompt: str, system_instruction: str, response_schema: dict) -> dict:
-    """
-    Calls Groq API with automatic retry, exponential backoff, and safe mock fallback.
-    Enforces a strict JSON structure based on the provided schema.
-    """
+    """Calls Groq API and forces JSON output matching the schema."""
     sys_prompt = (
         f"{system_instruction}\n\n"
         f"You MUST return ONLY a valid JSON object matching this exact schema:\n"
         f"{json.dumps(response_schema)}"
     )
+    
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": sys_prompt},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}, 
+            temperature=0.1 
+        )
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        print(f"\n[!] Groq API Error: {e}")
+        return _generate_mock_response(prompt, system_instruction)
 
-    for attempt in range(5):  
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
 
-            return json.loads(response.choices[0].message.content)
-
-        except Exception as e:
-            error_str = str(e)
-
-            if "rate_limit" in error_str or "429" in error_str:
-                wait_time = (2 ** attempt) * 10  # Exponential: 10s, 20s, 40s, 80s, 160s
-                print(f"[Retry {attempt+1}] Rate limit hit. Sleeping {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                print(f"[!] Groq API Error (non-retryable): {e}")
-                break
-
-    print("[Fallback] Using mock response due to repeated failures or API errors.")
-    return _generate_mock_response(prompt, system_instruction)
+def call_groq_text(prompt: str, system_instruction: str) -> str:
+    """Free-text (non-JSON) Groq call for interview transcript generation."""
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7 
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"\n[!] Groq Text API Error: {e}")
+        return "Recruiter: Tell me about your experience.\nCandidate: I have worked on many relevant projects."
 
 # ==========================================
 # JSON SCHEMAS
@@ -127,7 +126,6 @@ CONSOLIDATED_PROFILE_SCHEMA = {
                  "personality_signals", "satisfied_constraints", "missing_constraints", 
                  "ghost_delta", "semantic_reasoning", "match_score", "ghost_proximity_score"]
 }
-
 ENGAGEMENT_SCHEMA = {
     "type": "OBJECT",
     "properties": {
@@ -178,43 +176,61 @@ FOLLOWUP_SCHEMA = {
                  "hiring_recommendation", "risk_flags"]
 }
 
-BATCH_CANDIDATE_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "candidates": {
-            "type": "ARRAY",
-            "items": {
-                "type": "OBJECT",
-                "properties": {
-                    "name": {"type": "STRING"},
-                    "match_data": CONSOLIDATED_PROFILE_SCHEMA,
-                    "chat_transcript": {"type": "STRING"},
-                    "engagement": ENGAGEMENT_SCHEMA,
-                    "recruiter_brief": FOLLOWUP_SCHEMA
-                },
-                "required": ["name", "match_data", "chat_transcript", "engagement", "recruiter_brief"]
-            }
-        }
-    },
-    "required": ["candidates"]
-}
+# ==========================================
+# AGENT CLASSES
+# ==========================================
+class JDParserAgent:
+    def parse(self, jd_text: str) -> dict:
+        print("  -> [JDParserAgent] Extracting requirements...")
+        return call_groq(jd_text, "You are a senior HR analyst...", JD_SCHEMA)
 
-JD_SETUP_SCHEMA = {
-    "type": "OBJECT",
-    "properties": {
-        "jd_analysis": JD_QUALITY_SCHEMA,
-        "jd_parsed": JD_SCHEMA,
-        "ghost_candidate": GHOST_CANDIDATE_SCHEMA,
-    },
-    "required": ["jd_analysis", "jd_parsed", "ghost_candidate"]
-}
+class JDQualityAgent:
+    def evaluate(self, jd_text: str) -> dict:
+        print("  -> [JDQualityAgent] Grading the JD...")
+        return call_groq(jd_text, "You are an expert talent branding consultant...", JD_QUALITY_SCHEMA)
+
+class GhostCandidateAgent:
+    def synthesize(self, jd_constraints: dict) -> dict:
+        print("  -> [GhostCandidateAgent] Synthesizing ghost profile...")
+        return call_groq(f"JD Requirements: {json.dumps(jd_constraints)}", "You are an expert headhunter...", GHOST_CANDIDATE_SCHEMA)
+
+class ConsolidatedMatcherAgent:
+    def evaluate(self, resume_text: str, jd_constraints: dict, ghost: dict) -> dict:
+        print("  -> [ConsolidatedMatcherAgent] Matching vs JD/Ghost...")
+        prompt = f"JD Constraints: {json.dumps(jd_constraints)}\nGhost: {json.dumps(ghost)}\nResume: {resume_text}"
+        return call_groq(prompt, "You are an expert resume parser...", CONSOLIDATED_PROFILE_SCHEMA)
+
+class DynamicChatSimulator:
+    def simulate(self, name: str, parsed_resume: dict, jd_constraints: dict) -> str:
+        print(f"  -> [DynamicChatSimulator] Generating interview for {name}...")
+        prompt = f"Name: {name}\nJD: {json.dumps(jd_constraints)}\nResume: {json.dumps(parsed_resume)}"
+        
+        sys_instruction = (
+            "Simulate a realistic text-message interview (3 turns). "
+            "The recruiter MUST ask targeted questions based on this candidate's specific gaps or strengths. "
+            "The candidate MUST respond naturally — if they lack a skill, they don't magically have it. "
+            "CRITICAL INSTRUCTION: The candidate's tone, attitude, and level of enthusiasm MUST perfectly match the personality described in their resume. "
+            "FORMATTING REQUIREMENT: You MUST format the output exactly like this with no bolding or markdown:\n"
+            "Recruiter: [Text]\nCandidate: [Text]\nRecruiter: [Text] etc."
+        )
+        return call_groq_text(prompt, sys_instruction)
+
+class EngagementEvaluatorAgent:
+    def evaluate(self, transcript: str) -> dict:
+        print("  -> [EngagementEvaluatorAgent] Evaluating engagement...")
+        return call_groq(transcript, "You are a behavioral psychologist...", ENGAGEMENT_SCHEMA)
+
+class RecruiterBriefAgent:
+    def generate(self, name: str, match_data: dict, engagement_data: dict, ghost: dict, jd_constraints: dict) -> dict:
+        print(f"  -> [RecruiterBriefAgent] Generating action brief for {name}...")
+        prompt = f"Candidate: {name}\nMatch: {json.dumps(match_data)}\nEngagement: {json.dumps(engagement_data)}\nGhost: {json.dumps(ghost)}\nJD: {json.dumps(jd_constraints)}"
+        return call_groq(prompt, "You are a senior talent partner...", FOLLOWUP_SCHEMA)
 
 # ==========================================
 # QUADRANT + SCORING LOGIC
 # ==========================================
 
-def determine_quadrant(match_score: int, interest_score: int) -> Tuple[str, str]:
-    """Categorizes candidate into an actionable HR quadrant based on scores."""
+def determine_quadrant(match_score: int, interest_score: int) -> tuple:
     if match_score >= 70 and interest_score >= 70:
         return ("Q1: Fast-Track", "GREEN")
     elif match_score >= 70 and interest_score < 70:
@@ -224,267 +240,174 @@ def determine_quadrant(match_score: int, interest_score: int) -> Tuple[str, str]
     else:
         return ("Q4: Archive", "RED")
 
-def deception_penalty(deception_signals: list) -> int:
-    """Calculates a score penalty based on the presence of deceptive interview signals."""
-    if not deception_signals:
-        return 0
-    
-    base = len(deception_signals) * 3  # Light penalty per signal
-
-    if len(deception_signals) >= 3:
-        base += 5  # Escalation if multiple signals exist
-
-    return min(base, 15)  # Cap maximum penalty
-
-def archetype_modifier(archetype: str) -> int:
-    """Adjusts score based on the candidate's core psychological motivation."""
-    mapping = {
-        "Growth-seeker": +8,
-        "Prestige-seeker": +3,
-        "Stability-seeker": +1,
-        "Misaligned": -10,
-        "Not Evaluated (Low Match)": 0
-    }
-    return mapping.get(archetype, 0)
-
-def engagement_modifier(level: str) -> int:
-    """Applies a minor adjustment based on active interview engagement."""
-    return {
-        "High": +5,
-        "Medium": +2,
-        "Low": 0
-    }.get(level, 0)
-
-def composite_score(
-    match: int,
-    ghost_proximity: int,
-    interest: int,
-    authenticity: int,
-    archetype: str,
-    deception_signals: list,
-    engagement_level: str
-) -> float:
-    """
-    Generates a unified assessment score combining raw technical match 
-    with sophisticated behavioral intelligence.
-    """
-    base_score = (
-        (match * 0.35) +
+def composite_score(match: int, ghost_proximity: int, interest: int, authenticity: int) -> float:
+    return round(
+        (match * 0.40) +
         (ghost_proximity * 0.25) +
         (interest * 0.20) +
-        (authenticity * 0.20)
+        (authenticity * 0.15),
+        1
     )
 
-    penalty = deception_penalty(deception_signals)
-    archetype_bonus = archetype_modifier(archetype)
-    engagement_bonus = engagement_modifier(engagement_level)
+def process_single_candidate(name, resume_text, jd_constraints, ghost, jd_quality_report, agents):
+    print(f"  [Thread] Starting analysis for {name}...")
+    
+    consolidated_matcher, chat_sim, evaluator, brief_agent = agents
+    
+    match_data = consolidated_matcher.evaluate(resume_text, jd_constraints, ghost)
+    match_score = match_data.get("match_score", 0)
+    
+    MATCH_THRESHOLD = 50
+    transcript = None
+    
+    if match_score >= MATCH_THRESHOLD:
+        print(f"  [Processing] ✅ {name} passed match threshold ({match_score}%). Initiating chat...")
+        transcript = chat_sim.simulate(name, match_data, jd_constraints)
+        engagement_data = evaluator.evaluate(transcript)
+        brief = brief_agent.generate(name, match_data, engagement_data, ghost, jd_constraints)
+    else:
+        print(f"  [Processing] ⏭️ Skipping chat for {name} (Match Score: {match_score}% < {MATCH_THRESHOLD}%)")
+        engagement_data = {
+            "interest_score": 0,
+            "authenticity_score": 0,
+            "motivation_archetype": "Not Evaluated (Low Match)",
+            "deception_signals": [],
+            "behavioral_analysis": "Skipped engagement phase due to low technical match."
+        }
+        brief = {
+            "hiring_recommendation": "No",
+            "recruiter_brief": "Candidate did not meet the minimum technical match threshold to trigger automated outreach.",
+            "followup_questions": [],
+            "risk_flags": ["Does not meet core JD requirements"]
+        }
 
-    final = base_score + archetype_bonus + engagement_bonus - penalty
-
-    return round(max(0, min(final, 100)), 1)
-
-# ==========================================
-# AGENT EVALUATION LOGIC
-# ==========================================
-
-def _evaluate_candidate_batch(jd_text: str, ghost_text: str, batch: list) -> list:
-    """Processes a chunk of candidates through the simulation and scoring models."""
-    resumes_text = "\n\n".join([
-        f"Candidate: {name}\nResume:\n{text}"
-        for name, text in batch
-    ])
-
-    prompt = f"""
-JOB DESCRIPTION:
-{jd_text}
-
-IDEAL GHOST CANDIDATE PROFILE:
-{ghost_text}
-
-CANDIDATES TO EVALUATE:
-{resumes_text}
-
-INSTRUCTIONS:
-For EACH candidate above:
-1. Evaluate match vs JD and ghost profile (match_score, ghost_proximity_score)
-2. If match_score >= 70: simulate a realistic 3-turn interview.
-   Format the chat_transcript field EXACTLY as plain text like this:
-   Recruiter: [question text here]
-   Candidate: [answer text here]
-   Recruiter: [question text here]
-   Candidate: [answer text here]
-   Recruiter: [question text here]
-   Candidate: [answer text here]
-   Use ONLY "Recruiter:" and "Candidate:" as prefixes. Do NOT use Q: or A:. Do NOT use JSON inside chat_transcript — it must be a plain string.
-   If match_score < 70: set chat_transcript to ""
-3. Evaluate engagement, motivation archetype, interest_score
-4. Generate recruiter_brief with exactly 3 followup_questions (for every candidate)
-
-CRITICAL: Return ALL {len(batch)} candidates. Do NOT skip, omit, or merge any candidate. Return structured JSON ONLY.
-"""
-    response = call_groq(
-        prompt,
-        "You are a world-class AI hiring system. Evaluate every single candidate listed. Do not skip any.",
-        BATCH_CANDIDATE_SCHEMA
-    )
-    return response.get("candidates", [])
-
-def run_full_pipeline_single_call(jd_text: str, resumes: dict) -> dict:
-    """
-    Orchestrates the entire analytical process:
-    Phase 1: Deep JD analysis and 'Ghost' candidate synthesis.
-    Phase 2: Batched candidate evaluation to respect rate limits.
-    """
-    print("[BATCHED PIPELINE] Phase 1: JD setup...")
-
-    jd_prompt = f"""
-JOB DESCRIPTION:
-{jd_text}
-
-INSTRUCTIONS:
-1. Parse the JD (required skills, experience, domain, seniority, culture signals)
-2. Score the JD quality (clarity, attractiveness, red flags, missing hooks, rewrite suggestions, grade)
-   NOTE: Red flags must be about JD structure only (vague requirements, missing salary, excessive demands).
-   Company values and mission statements are NEVER red flags.
-3. Create a ghost candidate profile (the ideal hire)
-
-Return structured JSON ONLY.
-"""
-    setup = call_groq(
-        jd_prompt,
-        "You are a world-class AI hiring system.",
-        JD_SETUP_SCHEMA
+    quadrant_label, _ = determine_quadrant(match_score, engagement_data.get("interest_score", 0))
+    
+    score = composite_score(
+        match_score,
+        match_data.get("ghost_proximity_score", 0),
+        engagement_data.get("interest_score", 0),
+        engagement_data.get("authenticity_score", 0)
     )
 
-    ghost = setup.get("ghost_candidate", {})
-    ghost_text = (
-        f"Title: {ghost.get('ideal_title', '')}\n"
-        f"Skills: {', '.join(ghost.get('ideal_skills', []))}\n"
-        f"Experience: {ghost.get('ideal_years_experience', '')} years\n"
-        f"Profile: {ghost.get('ideal_background_narrative', '')}\n"
-        f"Must-haves: {', '.join(ghost.get('must_have_signals', []))}"
-    )
-
-    BATCH_SIZE = 5  
-    items = list(resumes.items())
-    batches = [items[i:i+BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
-
-    print(f"[BATCHED PIPELINE] Phase 2: evaluating {len(items)} candidates in {len(batches)} batches of {BATCH_SIZE}...")
-
-    all_candidates = []
-    INTER_BATCH_DELAY = 15  # seconds between batches to respect Groq rate limits
-
-    for idx, batch in enumerate(batches):
-        print(f"  → Batch {idx+1}/{len(batches)} ({len(batch)} candidates: {[name for name, _ in batch]})")
-        result = _evaluate_candidate_batch(jd_text, ghost_text, batch)
-        if len(result) != len(batch):
-            print(f"  ⚠ WARNING: Expected {len(batch)} candidates back, got {len(result)}. Groq may have truncated the batch.")
-        all_candidates.extend(result)
-        if idx < len(batches) - 1:
-            print(f"  ⏳ Waiting {INTER_BATCH_DELAY}s to respect Groq rate limits...")
-            time.sleep(INTER_BATCH_DELAY)
-
-    print(f"[BATCHED PIPELINE] Done. Got {len(all_candidates)} candidate results.")
-    jd_analysis = setup.get("jd_analysis", {})
-    if not jd_analysis.get("clarity_score") and not jd_analysis.get("overall_jd_grade"):
-        
-        if setup.get("clarity_score") or setup.get("overall_jd_grade"):
-            jd_analysis = {k: setup[k] for k in [
-                "clarity_score", "attractiveness_score", "red_flags",
-                "missing_hooks", "rewrite_suggestions", "overall_jd_grade"
-            ] if k in setup}
-        print(f"[JD DEBUG] jd_analysis extracted: {jd_analysis}")
-
-    jd_parsed = setup.get("jd_parsed", {})
-    if not jd_parsed.get("required_skills"):
-        if setup.get("required_skills"):
-            jd_parsed = {k: setup[k] for k in [
-                "required_skills", "required_years_experience", "core_domain",
-                "seniority_level", "implicit_culture_signals"
-            ] if k in setup}
-
+    print(f"  [Thread] Finished {name}!")
+    
     return {
-        "jd_analysis": jd_analysis,
-        "jd_parsed": jd_parsed,
-        "ghost_candidate": ghost,
-        "candidates": all_candidates
+        "name": name,
+        "composite_score": score,
+        "match_score": match_score,
+        "ghost_proximity_score": match_data.get("ghost_proximity_score", 0),
+        "interest_score": engagement_data.get("interest_score", 0),
+        "authenticity_score": engagement_data.get("authenticity_score", 0),
+        "quadrant": quadrant_label,
+        "motivation_archetype": engagement_data.get("motivation_archetype", "Unknown"),
+        "deception_signals": engagement_data.get("deception_signals", []),
+        "ghost_delta": match_data.get("ghost_delta", []),
+        "semantic_reasoning": match_data.get("semantic_reasoning", ""),
+        "behavioral_analysis": engagement_data.get("behavioral_analysis", ""),
+        "hiring_recommendation": brief.get("hiring_recommendation", "No Recommendation"),
+        "recruiter_brief": brief.get("recruiter_brief", "No brief available."),
+        "followup_questions": brief.get("followup_questions", []),
+        "risk_flags": brief.get("risk_flags", []),
+        "chat_transcript": transcript
     }
 
 # ==========================================
-# MAIN EXPORT
+# PIPELINE
 # ==========================================
 
-def run_pipeline(raw_jd: str, synthetic_resumes: dict) -> Tuple[List[Dict], Dict, Dict]:
-    """
-    Main entry point for the FastAPI backend. 
-    Structures data and computes final derived metrics.
-    """
-    data = run_full_pipeline_single_call(raw_jd, synthetic_resumes)
+def run_pipeline(raw_jd: str, synthetic_resumes: dict):
+    print("\n" + "=" * 60)
+    print("  TALENT RADAR — Advanced AI Talent Scouting Pipeline")
+    print("=" * 60)
+        
+    jd_parser = JDParserAgent()
+    jd_quality = JDQualityAgent()
+    ghost_agent = GhostCandidateAgent()
+    consolidated_matcher = ConsolidatedMatcherAgent()
+    chat_sim = DynamicChatSimulator()
+    evaluator = EngagementEvaluatorAgent()
+    brief_agent = RecruiterBriefAgent()
+
+    print("\n[PHASE 1: JD Analysis]")
+    jd_constraints = jd_parser.parse(raw_jd)
+    jd_quality_report = jd_quality.evaluate(raw_jd)
+
+    print(f"\n  JD Grade: {jd_quality_report.get('overall_jd_grade', 'N/A')}")
+    print(f"  Clarity: {jd_quality_report.get('clarity_score', 0)}/100  |  "
+          f"Attractiveness: {jd_quality_report.get('attractiveness_score', 0)}/100")
+    if jd_quality_report.get("red_flags"):
+        print(f"  Red Flags: {', '.join(jd_quality_report['red_flags'])}")
+    if jd_quality_report.get("rewrite_suggestions"):
+        print(f"  Suggestions: {jd_quality_report['rewrite_suggestions'][0]}...")
+
+    print("\n[PHASE 2: Ghost Candidate Synthesis]")
+    ghost = ghost_agent.synthesize(jd_constraints)
+    print(f"  Ghost Profile: {ghost.get('ideal_title', 'Unknown')} | "
+          f"{ghost.get('ideal_years_experience', 0)}+ yrs | "
+          f"Must-haves: {', '.join(ghost.get('must_have_signals', [])[:3])}")
+
+    print("\n[PHASE 3: Analyzing Candidates Sequentially...]")
     results = []
+     
+    agents_bundle = (consolidated_matcher, chat_sim, evaluator, brief_agent)
 
-    for c in data["candidates"]:
-        match = c.get("match_data", {})
-        engagement = c.get("engagement") or {}  
-        brief = c.get("recruiter_brief", {})
+    for name, resume_text in synthetic_resumes.items():
+        try:
+            candidate_result = process_single_candidate(
+                name, 
+                resume_text, 
+                jd_constraints, 
+                ghost, 
+                jd_quality_report, 
+                agents_bundle
+            )
+            results.append(candidate_result)
+        except Exception as exc:
+            print(f"  [!] Candidate {name} generated an exception: {exc}")
 
-        score = composite_score(
-            match.get("match_score", 0),
-            match.get("ghost_proximity_score", 0),
-            engagement.get("interest_score", 0),
-            engagement.get("authenticity_score", 0),
-            engagement.get("motivation_archetype", ""),
-            engagement.get("deception_signals", []),
-            engagement.get("engagement_level", "Low")
-        )
-
-        quadrant, _ = determine_quadrant(
-            match.get("match_score", 0),
-            engagement.get("interest_score", 0)
-        )
-
-        results.append({
-            "name": c["name"],
-            "composite_score": score,
-            "match_score": match.get("match_score", 0),
-            "ghost_proximity_score": match.get("ghost_proximity_score", 0),
-            "interest_score": engagement.get("interest_score", 0),
-            "authenticity_score": engagement.get("authenticity_score", 0),
-            "quadrant": quadrant,
-            "motivation_archetype": engagement.get("motivation_archetype", ""),
-            "deception_signals": engagement.get("deception_signals", []),
-            "ghost_delta": match.get("ghost_delta", []),
-            "semantic_reasoning": match.get("semantic_reasoning", ""),
-            "behavioral_analysis": engagement.get("behavioral_analysis", ""),
-            "hiring_recommendation": brief.get("hiring_recommendation", ""),
-            "recruiter_brief": brief.get("recruiter_brief", ""),
-            "followup_questions": brief.get("followup_questions", []),
-            "risk_flags": brief.get("risk_flags", []),
-            "chat_transcript": c.get("chat_transcript", "")
-        })
-
-    # Rank candidates by strongest fit
     results.sort(key=lambda x: x["composite_score"], reverse=True)
 
-    return results, data["ghost_candidate"], data["jd_analysis"]
+    print("\n" + "=" * 60)
+    print("  FINAL RANKED SHORTLIST — TALENT RADAR")
+    print("=" * 60)
 
+    for rank, r in enumerate(results, 1):
+        print(f"\n#{rank}  {r['name']}  |  Composite: {r['composite_score']}/100  |  {r['quadrant']}")
+        print(f"     Scores  → Match: {r['match_score']}  Ghost-Fit: {r['ghost_proximity_score']}  "
+              f"Interest: {r['interest_score']}  Authenticity: {r['authenticity_score']}")
+        print(f"     Archetype: {r['motivation_archetype']}  |  Rec: {r['hiring_recommendation']}")
+        print(f"     Brief: {r['recruiter_brief']}")
+
+    if len(results) > 0:
+        avg_match = sum(r["match_score"] for r in results) / len(results)
+        if avg_match < 65:
+            print("\n[PHASE 5: JD IMPROVEMENT RECOMMENDATIONS]")
+            print("  Average match score is low — your JD may be deterring strong candidates.")
+            for s in jd_quality_report.get("rewrite_suggestions", []):
+                print(f"    • {s}")
+
+    print("\n" + "=" * 60)
+    print("  Pipeline complete.")
+    print("=" * 60)
+
+    return results, ghost, jd_quality_report
 
 # ==========================================
-# MOCK DATA (Fallback when API key fails)
+# MOCK DATA (Fallback when no API key)
 # ==========================================
-
 def _generate_mock_response(prompt: str, sys_instruction: str = "") -> dict:
-    """Provides structured synthetic data to maintain app functionality during API outages."""
     prompt_lower = prompt.lower()
     sys_lower = sys_instruction.lower()
 
     if "headhunter" in sys_lower or ("ideal" in sys_lower and "offer" in sys_lower):
         return {
             "ideal_title": "Senior Data/ML Engineer",
-            "ideal_skills": ["Python", "SQL", "PyTorch", "AWS"],
+            "ideal_skills": ["Python", "SQL", "PyTorch", "AWS", "MLflow", "dbt"],
             "ideal_years_experience": 5,
-            "ideal_background_narrative": "5 years building ML pipelines.",
-            "must_have_signals": ["Production ML deployment"],
-            "nice_to_have_signals": ["OSS contributions"]
+            "ideal_background_narrative": "5 years building end-to-end ML pipelines.",
+            "must_have_signals": ["Production ML deployment", "Cloud data pipeline", "SQL proficiency"],
+            "nice_to_have_signals": ["OSS contributions", "MLOps tooling", "Team leadership"]
         }
 
     if "talent branding" in sys_lower:
@@ -492,71 +415,56 @@ def _generate_mock_response(prompt: str, sys_instruction: str = "") -> dict:
             "clarity_score": 62,
             "attractiveness_score": 45,
             "red_flags": ["No salary range mentioned"],
-            "missing_hooks": ["Remote/hybrid policy"],
+            "missing_hooks": ["Salary range", "Remote/hybrid policy"],
             "rewrite_suggestions": ["Add salary range to attract serious candidates"],
             "overall_jd_grade": "C"
         }
 
-    return {
-        "jd_analysis": {
-            "clarity_score": 60,
-            "attractiveness_score": 50,
-            "red_flags": [],
-            "missing_hooks": [],
-            "rewrite_suggestions": [],
-            "overall_jd_grade": "C"
-        },
-        "jd_parsed": {
-            "required_skills": ["Python", "SQL"],
-            "required_years_experience": 3,
-            "core_domain": "Data",
-            "seniority_level": "Mid",
-            "implicit_culture_signals": []
-        },
-        "ghost_candidate": {
-            "ideal_title": "Data Analyst",
-            "ideal_skills": ["Python", "SQL"],
-            "ideal_years_experience": 3,
-            "ideal_background_narrative": "Strong data background",
-            "must_have_signals": [],
-            "nice_to_have_signals": []
-        },
-        "candidates": [
-            {
-                "name": "Mock Candidate",
-                "match_data": {
-                    "inferred_skills": ["Python"],
-                    "total_years_experience": 3,
-                    "current_title": "Analyst",
-                    "personality_signals": [],
-                    "satisfied_constraints": [],
-                    "missing_constraints": [],
-                    "ghost_delta": [],
-                    "semantic_reasoning": "Mock reasoning fallback active.",
-                    "match_score": 70,
-                    "ghost_proximity_score": 60
-                },
-                "chat_transcript": "Recruiter: Tell me about yourself.\nCandidate: I have experience in Python.",
-                "engagement": {
-                    "motivation_archetype": "Growth-seeker",
-                    "deception_signals": [],
-                    "authenticity_score": 80,
-                    "engagement_level": "High",
-                    "behavioral_analysis": "Good",
-                    "interest_score": 75
-                },
-                "recruiter_brief": {
-                    "recruiter_brief": "Good candidate, fallback mock generated.",
-                    "followup_questions": [],
-                    "hiring_recommendation": "Yes",
-                    "risk_flags": []
-                }
-            }
-        ]
-    }
+    if "hr analyst" in sys_lower:
+        return {
+            "required_skills": ["Python", "SQL", "Machine Learning", "AWS/GCP"],
+            "required_years_experience": 4,
+            "core_domain": "Data Engineering",
+            "seniority_level": "Senior",
+            "implicit_culture_signals": ["Result-driven", "Technical depth valued"]
+        }
+
+    if "matching engine" in sys_lower or "resume parser" in sys_lower:
+        return {
+            "inferred_skills": ["Python", "SQL", "Machine Learning"],
+            "total_years_experience": 3,
+            "current_title": "Software Developer",
+            "personality_signals": ["Eager to learn"],
+            "satisfied_constraints": ["Python", "SQL"],
+            "missing_constraints": ["AWS", "PyTorch"],
+            "ghost_delta": ["Missing production ML deployment"],
+            "semantic_reasoning": "Good basic match but missing specific cloud constraints.",
+            "match_score": 65,
+            "ghost_proximity_score": 50
+        }
+
+    if "behavioral psychologist" in sys_lower:
+        return {"motivation_archetype": "Misaligned",
+                "deception_signals": [],
+                "authenticity_score": 61,
+                "engagement_level": "Medium",
+                "behavioral_analysis": "High energy but answers do not demonstrate understanding.",
+                "interest_score": 72}
+
+    if "talent partner" in sys_lower:
+        return {
+            "recruiter_brief": "Candidate has strong fundamentals but is missing critical skills.",
+            "followup_questions": [
+                {"question": "What would make you excited about this data team's work beyond the title?",
+                 "reason": "Checks whether interest is genuine."}
+            ],
+            "hiring_recommendation": "No",
+            "risk_flags": ["Significant skill gap"]
+        }
+
+    return {}
 
 if __name__ == "__main__":
-    # Provides safe execution if script is run directly for debugging.
-    print("Testing pipeline with empty candidate DB and dummy JD...")
-    res, ghost, jd = run_pipeline("Dummy Job Description requiring Python", {})
-    print("Test Complete. Candidates processed:", len(res))
+    dummy_jd = "Looking for a Python Developer with SQL experience."
+    dummy_resumes = {"Alice": "5 years Python and PostgreSQL.", "Bob": "Junior Dev, knows Python."}
+    run_pipeline(dummy_jd, dummy_resumes)

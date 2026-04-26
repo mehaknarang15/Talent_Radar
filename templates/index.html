@@ -943,89 +943,99 @@ The AI will:
      * @param {Object} jd - Parsed JD Quality data
      */
     function renderJDAnalysis(jd) {
-        if (!jd) { console.warn('[JD] renderJDAnalysis received null/undefined'); return; }
+        try {
+            if (!jd) { console.warn('[JD] renderJDAnalysis received null/undefined'); return; }
 
-        console.log('[JD] Raw jd_report received from API:', JSON.stringify(jd, null, 2));
+            console.log('[JD] Raw jd_report received from API:', JSON.stringify(jd, null, 2));
 
-        if (!jd.clarity_score && !jd.overall_jd_grade) {
-            const unwrapped = jd.jd_analysis || jd.jd_quality || jd.quality || jd.analysis;
-            if (unwrapped) {
-                console.log('[JD] Unwrapped from nested key:', unwrapped);
-                jd = unwrapped;
+            if (!jd.clarity_score && !jd.overall_jd_grade) {
+                const unwrapped = jd.jd_analysis || jd.jd_quality || jd.quality || jd.analysis;
+                if (unwrapped) {
+                    console.log('[JD] Unwrapped from nested key:', unwrapped);
+                    jd = unwrapped;
+                }
             }
-        }
 
-        const container = document.getElementById('jd-analysis');
+            const container = document.getElementById('jd-analysis');
 
-        const gradeClass = (jd.overall_jd_grade || 'C').toUpperCase();
-        const brief = jd.brief || jd.jd_brief || jd.summary || '';
-        const redFlags = Array.isArray(jd.red_flags) ? jd.red_flags : [];
-        const hooks    = Array.isArray(jd.missing_hooks) ? jd.missing_hooks : [];
-        const rewrites = Array.isArray(jd.rewrite_suggestions) ? jd.rewrite_suggestions : [];
+            // Robust type conversion: forces it to a string so numbers don't crash .toUpperCase()
+            const rawGrade = jd.overall_jd_grade || 'C';
+            const gradeClass = String(rawGrade).toUpperCase().replace(/[^A-F]/g, '') || 'C';
+            
+            const brief = jd.brief || jd.jd_brief || jd.summary || '';
+            const redFlags = Array.isArray(jd.red_flags) ? jd.red_flags : [];
+            const hooks    = Array.isArray(jd.missing_hooks) ? jd.missing_hooks : [];
+            const rewrites = Array.isArray(jd.rewrite_suggestions) ? jd.rewrite_suggestions : [];
 
-        container.innerHTML = `
-            <div class="analysis-section">
-                <div class="analysis-label">JD Grade</div>
-                <div style="display:flex;align-items:center;gap:12px;">
-                    <div class="grade-badge ${gradeClass}">${gradeClass}</div>
-                    <div>
-                        <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted);">Overall assessment</div>
+            container.innerHTML = `
+                <div class="analysis-section">
+                    <div class="analysis-label">JD Grade</div>
+                    <div style="display:flex;align-items:center;gap:12px;">
+                        <div class="grade-badge ${gradeClass}">${gradeClass}</div>
+                        <div>
+                            <div style="font-family:var(--mono);font-size:0.68rem;color:var(--muted);">Overall assessment</div>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="divider"></div>
+                <div class="divider"></div>
 
-            <div class="analysis-section">
-                <div class="analysis-label">Scores</div>
-                <div class="score-row">
-                    <div class="score-label">Clarity</div>
-                    <div class="score-bar-track"><div class="score-bar-fill" style="width:${jd.clarity_score || 0}%"></div></div>
-                    <div class="score-val">${jd.clarity_score || 0}</div>
+                <div class="analysis-section">
+                    <div class="analysis-label">Scores</div>
+                    <div class="score-row">
+                        <div class="score-label">Clarity</div>
+                        <div class="score-bar-track"><div class="score-bar-fill" style="width:${jd.clarity_score || 0}%"></div></div>
+                        <div class="score-val">${jd.clarity_score || 0}</div>
+                    </div>
+                    <div class="score-row">
+                        <div class="score-label">Attractiveness</div>
+                        <div class="score-bar-track"><div class="score-bar-fill" style="width:${jd.attractiveness_score || 0}%;background:var(--accent2)"></div></div>
+                        <div class="score-val" style="color:var(--accent2)">${jd.attractiveness_score || 0}</div>
+                    </div>
                 </div>
-                <div class="score-row">
-                    <div class="score-label">Attractiveness</div>
-                    <div class="score-bar-track"><div class="score-bar-fill" style="width:${jd.attractiveness_score || 0}%;background:var(--accent2)"></div></div>
-                    <div class="score-val" style="color:var(--accent2)">${jd.attractiveness_score || 0}</div>
-                </div>
-            </div>
 
-            ${brief ? `
-            <div class="divider"></div>
-            <div class="analysis-section">
-                <div class="analysis-label">Brief</div>
-                <div class="brief-text">${brief}</div>
-            </div>` : ''}
+                ${brief ? `
+                <div class="divider"></div>
+                <div class="analysis-section">
+                    <div class="analysis-label">Brief</div>
+                    <div class="brief-text">${brief}</div>
+                </div>` : ''}
 
-            ${redFlags.length ? `
-            <div class="divider"></div>
-            <div class="analysis-section">
-                <div class="analysis-label">⚠ Red Flags</div>
-                <div class="tag-list">
-                    ${redFlags.map(f => `<span class="tag red">${f}</span>`).join('')}
-                </div>
-            </div>` : ''}
+                ${redFlags.length ? `
+                <div class="divider"></div>
+                <div class="analysis-section">
+                    <div class="analysis-label">⚠ Red Flags</div>
+                    <div class="tag-list">
+                        ${redFlags.map(f => `<span class="tag red">${f}</span>`).join('')}
+                    </div>
+                </div>` : ''}
 
-            ${hooks.length ? `
-            <div class="divider"></div>
-            <div class="analysis-section">
-                <div class="analysis-label">Missing Hooks</div>
-                <div class="tag-list">
-                    ${hooks.map(h => `<span class="tag yellow">${h}</span>`).join('')}
-                </div>
-            </div>` : ''}
+                ${hooks.length ? `
+                <div class="divider"></div>
+                <div class="analysis-section">
+                    <div class="analysis-label">Missing Hooks</div>
+                    <div class="tag-list">
+                        ${hooks.map(h => `<span class="tag yellow">${h}</span>`).join('')}
+                    </div>
+                </div>` : ''}
 
-            ${rewrites.length ? `
-            <div class="divider"></div>
-            <div class="analysis-section">
-                <div class="analysis-label">Suggestions</div>
-                <div class="tag-list">
-                    ${rewrites.map(r => `<span class="tag green">${r}</span>`).join('')}
-                </div>
-            </div>` : ''}
-        `;
+                ${rewrites.length ? `
+                <div class="divider"></div>
+                <div class="analysis-section">
+                    <div class="analysis-label">Suggestions</div>
+                    <div class="tag-list">
+                        ${rewrites.map(r => `<span class="tag green">${r}</span>`).join('')}
+                    </div>
+                </div>` : ''}
+            `;
+        } catch (err) {
+            console.error("[JD Analysis Render Error]:", err);
+            document.getElementById('jd-analysis').innerHTML = `
+                <div class="brief-text" style="color:var(--accent3); border-color:var(--accent3);">
+                    Error parsing JD analysis from the API: ${err.message}
+                </div>`;
+        }
     }
-
     /**
      * Renders the right-panel list of scored candidates.
      * @param {Array} results - List of candidate response objects
