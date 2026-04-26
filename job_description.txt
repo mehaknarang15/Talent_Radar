@@ -1,0 +1,17 @@
+Job Title: Machine Learning Engineer (NLP & Alignment)
+Department: Data Strategy
+
+Company Overview: At XYZ, we are at the forefront of ethical artificial intelligence, building next-generation language models that are safe, transparent, and highly capable. Our Data Strategy division powers the core algorithms that drive our enterprise solutions, transforming complex datasets into actionable, human-centric AI systems. We pride ourselves on a culture of rigorous engineering, continuous learning, and responsible AI development.
+
+Mission Statement: Our mission is to democratize advanced AI while ensuring strictly aligned and safe model behaviors that empower and protect users.
+
+Role & Requirements:
+We are seeking a Machine Learning Engineer to join our core AI team. You will be responsible for fine-tuning Language Models and building scalable predictive models.
+
+Experience: Minimum 3 years of experience.
+
+Core Stack: Must be proficient in Python, SQL, and Machine Learning frameworks (such as PyTorch, TensorFlow, or Scikit-learn).
+
+Domain Expertise: Experience with NLP, specifically BERT or Masked Language Modeling, is preferred. An understanding of AI Alignment or Reinforcement Learning from Human Feedback (RLHF) will make you a standout candidate.
+
+Infrastructure: Familiarity with deploying models to AWS or GCP environments is a strong plus.

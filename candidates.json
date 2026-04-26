@@ -1,0 +1,27 @@
+[
+  {
+    "candidate_id": "CAND-001",
+    "name": "Priya Sharma",
+    "resume_text": "AI Alignment Specialist and Data Scientist with 4 years of experience. Expert in Python, PyTorch, and SQL. I have extensive experience with RLHF workflows and recently led a project fine-tuning a BERT-based Masked Language Model for emotion classification. Deployed multiple NLP models into production using AWS EC2 and S3. I thrive in environments where I can build ethical, well-aligned AI systems."
+  },
+  {
+    "candidate_id": "CAND-002",
+    "name": "Rohan Gupta",
+    "resume_text": "Data Analyst with 2 years of experience. I am highly proficient in SQL, Power BI, and Python (Pandas, NumPy). During my last internship, I analyzed over 100,000 data scenarios to extract actionable business intelligence. I am very passionate about transitioning into Machine Learning. While I don't have production deep learning or cloud experience yet, I am a fast learner and incredibly eager to prove myself."
+  },
+  {
+    "candidate_id": "CAND-003",
+    "name": "Anita Desai",
+    "resume_text": "Senior Machine Learning Engineer with 6 years of experience. Expert in Python, SQL, PyTorch, and AWS. I have extensive experience fine-tuning BERT models and implementing RLHF pipelines in production. I am a highly passive candidate. I am currently very comfortable at my FAANG job and am only taking interviews to see if you can beat my current $300k compensation package. I don't care about company mission, I only care about title, salary, and remote work guarantees."
+  },
+  {
+    "candidate_id": "CAND-004",
+    "name": "Vikram Patel",
+    "resume_text": "Academic Researcher and Logic Programmer. 5 years of research experience focusing on symbolic knowledge representation and NLP interfaces. Highly skilled in Prolog, LaTeX, and spaCy. I recently developed complex logic-based text adventures and review papers on multimodal attention mechanisms. Looking to transition from academia to industry. No commercial cloud deployment experience."
+  },
+  {
+    "candidate_id": "CAND-005",
+    "name": "Kavya Iyer",
+    "resume_text": "Machine Learning Developer with 3 years of experience. Solid foundation in Python, Scikit-learn, and SQL. I build predictive models for customer churn and revenue forecasting. I have dabbled in NLP using spaCy, but haven't touched RLHF or large-scale transformer fine-tuning. Comfortable with basic AWS deployments using Docker. Looking for a team where I can grow my deep learning skills."
+  }
+]
