@@ -31,10 +31,9 @@ Based on the raw Match and Interest scores, the agent plots every candidate into
 
 ## 🏗️ 4. Trade-offs & Architecture
 * **🤖 Simulated vs. Live Chat:** We simulate candidate responses instead of real-time chat.  
-  **Trade-off:** Faster scalability vs. real human spontaneity  
-
-* **📦 LLM Batching:** Candidates are processed in batches with retry logic.  
-  **Trade-off:** Slight delay vs. better reliability and JSON consistency  
+  **Trade-off:** Faster scalability vs. real human spontaneity
+    
+<img width="900" height="490" alt="image" src="https://github.com/user-attachments/assets/0dec315f-1aaa-4b24-9974-ab64ab86b0eb" />
 
 ---
 
