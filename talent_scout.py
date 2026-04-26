@@ -1,24 +1,3 @@
-"""
-╔══════════════════════════════════════════════════════════════╗
-║   TALENT RADAR — AI Talent Scouting & Engagement Agent v2   ║
-║   Hackathon Edition                                          ║
-╚══════════════════════════════════════════════════════════════╝
-
-UNIQUE DIFFERENTIATORS vs standard pipelines:
-  1. GHOST CANDIDATE BENCHMARKING — LLM synthesizes a "perfect" candidate 
-     profile from the JD, then measures real candidates against the ghost.
-  2. REVERSE JOB SCORING — AI scores the JD itself: Is it well-written?
-     Attractive? Does it have red flags that deter strong candidates?
-  3. MOTIVATION ARCHETYPE DETECTION — Goes beyond "interested/not interested".
-     Classifies candidates as Prestige-seeker, Growth-seeker, Stability-seeker,
-     or Misaligned to predict culture fit.
-  4. DECEPTION SIGNAL ANALYSIS — Flags interview responses that show rehearsed, 
-     vague, or evasive language vs genuine enthusiasm.
-  5. RECRUITER ACTION BRIEF — Generates a customized set of 3 follow-up 
-     questions for each candidate, targeting detected skill gaps.
-  6. DYNAMIC JD IMPROVEMENT SUGGESTIONS — If the JD is attracting weak 
-     candidates, the AI suggests how to rewrite it.
-"""
 import os
 import time
 import json
@@ -34,8 +13,7 @@ load_dotenv()
 # Initialize the Groq client
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Llama 3.3 70B is currently the most capable model on Groq for logic and JSON tasks
-MODEL = "llama-3.3-70b-versatile" 
+MODEL = "llama-3.1-8b-instant" 
 
 def call_groq(prompt: str, system_instruction: str, response_schema: dict) -> dict:
     """Calls Groq API with retry + safe fallback."""
@@ -46,7 +24,7 @@ def call_groq(prompt: str, system_instruction: str, response_schema: dict) -> di
         f"{json.dumps(response_schema)}"
     )
 
-    for attempt in range(3):
+    for attempt in range(5):  
         try:
             response = client.chat.completions.create(
                 model=MODEL,
@@ -64,7 +42,7 @@ def call_groq(prompt: str, system_instruction: str, response_schema: dict) -> di
             error_str = str(e)
 
             if "rate_limit" in error_str or "429" in error_str:
-                wait_time = 10 * (attempt + 1)
+                wait_time = (2 ** attempt) * 10  # exponential: 10, 20, 40, 80, 160s
                 print(f"[Retry {attempt+1}] Rate limit hit. Sleeping {wait_time}s...")
                 time.sleep(wait_time)
             else:
@@ -73,36 +51,6 @@ def call_groq(prompt: str, system_instruction: str, response_schema: dict) -> di
 
     print("[Fallback] Using mock response.")
     return _generate_mock_response(prompt, system_instruction)
-
-def call_groq_text(prompt: str, system_instruction: str) -> str:
-    """Free-text Groq call with retry + fallback."""
-
-    for attempt in range(3):
-        try:
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.7
-            )
-
-            return response.choices[0].message.content
-
-        except Exception as e:
-            error_str = str(e)
-
-            if "rate_limit" in error_str or "429" in error_str:
-                wait_time = 10 * (attempt + 1)
-                print(f"[Retry {attempt+1}] Rate limit hit (text). Sleeping {wait_time}s...")
-                time.sleep(wait_time)
-            else:
-                print(f"[!] Groq Text API Error: {e}")
-                break
-
-    print("[Fallback] Using default transcript.")
-    return "Recruiter: Tell me about your experience.\nCandidate: I have worked on relevant projects."
 
 # ==========================================
 # JSON SCHEMAS
@@ -335,48 +283,139 @@ def composite_score(
 
     return round(max(0, min(final, 100)), 1)
 
-def run_full_pipeline_single_call(jd_text: str, resumes: dict):
-    print("[ONE CALL PIPELINE]")
+BATCH_CANDIDATE_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "candidates": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "match_data": CONSOLIDATED_PROFILE_SCHEMA,
+                    "chat_transcript": {"type": "STRING"},
+                    "engagement": ENGAGEMENT_SCHEMA,
+                    "recruiter_brief": FOLLOWUP_SCHEMA
+                },
+                "required": ["name", "match_data", "chat_transcript", "engagement", "recruiter_brief"]
+            }
+        }
+    },
+    "required": ["candidates"]
+}
 
+JD_SETUP_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "jd_analysis": JD_QUALITY_SCHEMA,
+        "jd_parsed": JD_SCHEMA,
+        "ghost_candidate": GHOST_CANDIDATE_SCHEMA,
+    },
+    "required": ["jd_analysis", "jd_parsed", "ghost_candidate"]
+}
+
+def _evaluate_candidate_batch(jd_text: str, ghost_text: str, batch: list) -> list:
+    """Evaluates a batch of (name, resume_text) tuples. Returns list of candidate dicts."""
     resumes_text = "\n\n".join([
         f"Candidate: {name}\nResume:\n{text}"
-        for name, text in resumes.items()
+        for name, text in batch
     ])
 
     prompt = f"""
 JOB DESCRIPTION:
 {jd_text}
 
-CANDIDATES:
+IDEAL GHOST CANDIDATE PROFILE:
+{ghost_text}
+
+CANDIDATES TO EVALUATE:
 {resumes_text}
 
 INSTRUCTIONS:
-You must perform ALL of the following:
+For EACH candidate above:
+1. Evaluate match vs JD and ghost profile (match_score, ghost_proximity_score)
+2. If match_score >= 70: simulate a realistic 3-turn interview.
+   Format EXACTLY as:
+   Q: [question]
+   A: [answer]
+   Q: [question]
+   A: [answer]
+   Q: [question]
+   A: [answer]
+   If match_score < 60: set chat_transcript to ""
+3. Evaluate engagement, motivation archetype, interest_score
+4. Generate recruiter_brief with exactly 3 followup_questions (for every candidate)
 
-1. Parse JD
-2. Evaluate JD quality
-3. Create ghost candidate
-4. Evaluate EACH candidate:
-   - match vs JD
-   - ghost proximity
-   - simulate chat with EXACTLY 3 Q&A turns (ONLY if match_score >= 60). Format as "Q: ...
-A: ..." repeated 3 times
-   - evaluate engagement
-   - generate recruiter brief
-
-IMPORTANT:
-- Generate followup_questions with exactly 3 targeted questions for every candidate
-- Only include chat_transcript if match_score >= 60, otherwise set chat_transcript to ""
-- Return structured JSON ONLY
+Return ALL {len(batch)} candidates. Return structured JSON ONLY.
 """
-
     response = call_groq(
         prompt,
-        "You are a world-class AI hiring system executing a full recruitment pipeline.",
-        FULL_PIPELINE_SCHEMA
+        "You are a world-class AI hiring system. Evaluate every single candidate listed. Do not skip any.",
+        BATCH_CANDIDATE_SCHEMA
+    )
+    return response.get("candidates", [])
+
+
+def run_full_pipeline_single_call(jd_text: str, resumes: dict):
+    """Phase 1: parse JD. Phase 2: evaluate candidates in parallel batches of 8."""
+    print("[BATCHED PIPELINE] Phase 1: JD setup...")
+
+    # --- Phase 1: JD parse + ghost ---
+    jd_prompt = f"""
+JOB DESCRIPTION:
+{jd_text}
+
+INSTRUCTIONS:
+1. Parse the JD (required skills, experience, domain, seniority, culture signals)
+2. Score the JD quality (clarity, attractiveness, red flags, missing hooks, rewrite suggestions, grade)
+   NOTE: Red flags must be about JD structure only (vague requirements, missing salary, excessive demands).
+   Company values and mission statements are NEVER red flags.
+3. Create a ghost candidate profile (the ideal hire)
+
+Return structured JSON ONLY.
+"""
+    setup = call_groq(
+        jd_prompt,
+        "You are a world-class AI hiring system.",
+        JD_SETUP_SCHEMA
     )
 
-    return response
+    ghost = setup.get("ghost_candidate", {})
+    ghost_text = (
+        f"Title: {ghost.get('ideal_title', '')}\n"
+        f"Skills: {', '.join(ghost.get('ideal_skills', []))}\n"
+        f"Experience: {ghost.get('ideal_years_experience', '')} years\n"
+        f"Profile: {ghost.get('ideal_background_narrative', '')}\n"
+        f"Must-haves: {', '.join(ghost.get('must_have_signals', []))}"
+    )
+
+    # --- Phase 2: batch candidates ---
+    BATCH_SIZE = 10
+    items = list(resumes.items())
+    batches = [items[i:i+BATCH_SIZE] for i in range(0, len(items), BATCH_SIZE)]
+
+    print(f"[BATCHED PIPELINE] Phase 2: evaluating {len(items)} candidates in {len(batches)} batches...")
+
+    all_candidates = []
+
+    INTER_BATCH_DELAY = 20  # seconds between batches
+
+    for idx, batch in enumerate(batches):
+        print(f"  → Batch {idx+1}/{len(batches)} ({len(batch)} candidates)")
+        result = _evaluate_candidate_batch(jd_text, ghost_text, batch)
+        all_candidates.extend(result)
+        if idx < len(batches) - 1:  # no delay after the last batch
+            print(f"  ⏳ Waiting {INTER_BATCH_DELAY}s to respect Groq rate limits...")
+            time.sleep(INTER_BATCH_DELAY)
+
+    print(f"[BATCHED PIPELINE] Done. Got {len(all_candidates)} candidate results.")
+
+    return {
+        "jd_analysis": setup.get("jd_analysis", {}),
+        "jd_parsed": setup.get("jd_parsed", {}),
+        "ghost_candidate": ghost,
+        "candidates": all_candidates
+    }
 
 # ==========================================
 # PIPELINE
@@ -427,7 +466,7 @@ def run_pipeline(raw_jd: str, synthetic_resumes: dict):
             "chat_transcript": c.get("chat_transcript", "")
         })
 
-    results.sort(key=lambda x: x["match_score"], reverse=True)
+    results.sort(key=lambda x: x["composite_score"], reverse=True)
 
     return results, data["ghost_candidate"], data["jd_analysis"]
 
