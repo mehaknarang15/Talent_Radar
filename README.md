@@ -78,4 +78,4 @@ Open in browser:
 http://127.0.0.1:8000
 
 ## 🎥 Demo Video
-(https://drive.google.com/file/d/1Oo9xoREh2fosoLaCx8ET7XiJ3jimUoJz/view?usp=sharing)
+https://drive.google.com/file/d/1Oo9xoREh2fosoLaCx8ET7XiJ3jimUoJz/view?usp=sharing
